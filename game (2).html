@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Roller: Black-Hat Protocol</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root {
+            --hacker-green: #00ff41;
+            --hacker-dark: #000800;
+            --hacker-red: #ff003c;
+            --hacker-gold: #ffcc00;
+            --hacker-blue: #00d4ff;
+        }
+
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: var(--hacker-dark); 
+            font-family: 'Courier New', Courier, monospace;
+            color: var(--hacker-green);
+            text-transform: uppercase;
+            user-select: none;
+        }
+
+        /* Scanline & Overlay Effects */
+        #crt-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: 
+                linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%),
+                radial-gradient(circle, transparent 40%, rgba(0, 0, 0, 0.4) 100%);
+            background-size: 100% 3px, 100% 100%;
+            pointer-events: none;
+            z-index: 500;
+        }
+
+        #ui {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 110;
+            padding: 15px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            visibility: hidden;
+        }
+
+        .terminal-block {
+            background: rgba(0, 15, 0, 0.9);
+            border: 1px solid var(--hacker-green);
+            padding: 10px;
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.15);
+            position: relative;
+            pointer-events: auto;
+        }
+
+        .label { font-size: 12px; font-weight: bold; border-bottom: 1px solid var(--hacker-green); margin-bottom: 5px; }
+        .log-line { font-size: 10px; line-height: 1.3; opacity: 0.9; }
+
+        .integrity-wrap { width: 180px; height: 10px; border: 1px solid var(--hacker-green); position: relative; overflow: hidden; margin: 5px 0; }
+        #integrity-bar { height: 100%; width: 100%; background: var(--hacker-green); transition: width 0.2s; }
+
+        #status-msg { font-size: 14px; font-weight: 900; }
+        .danger { color: var(--hacker-red); animation: blink 0.4s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.1; } }
+
+        /* Screens */
+        .overlay-screen {
+            position: absolute;
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 150;
+            background: var(--hacker-dark); 
+            padding: 40px;
+            border: 2px solid var(--hacker-green);
+            width: 85%;
+            max-width: 550px;
+            box-shadow: 0 0 50px rgba(0, 255, 65, 0.3);
+            text-align: center;
+        }
+
+        #loading-screen { 
+            z-index: 1000; 
+            width: 100vw; 
+            height: 100vh; 
+            max-width: none; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+            align-items: center; 
+            border: none;
+            background: #000;
+        }
+        
+        .loading-container { width: 400px; text-align: left; }
+
+        #death-screen { 
+            border-color: var(--hacker-red); 
+            box-shadow: 0 0 80px rgba(255, 0, 60, 0.4);
+        }
+        
+        .crash-impact {
+            animation: impact-shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        @keyframes impact-shake {
+            10%, 90% { transform: translate(-50%, -50%) translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate(-50%, -50%) translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate(-50%, -50%) translate3d(-3px, 0, 0); }
+            40%, 60% { transform: translate(-50%, -50%) translate3d(3px, 0, 0); }
+        }
+
+        .customizer {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .ball-option {
+            border: 1px solid var(--hacker-green);
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            font-size: 10px;
+            transition: 0.2s;
+        }
+        .ball-option:hover { background: rgba(0, 255, 65, 0.1); }
+        .ball-option.selected { background: var(--hacker-green); color: #000; box-shadow: 0 0 15px var(--hacker-green); }
+
+        h1 { font-size: 2.2rem; margin: 0 0 15px 0; color: var(--hacker-green); letter-spacing: -2px; }
+        button {
+            background: var(--hacker-green); border: none; color: #000;
+            padding: 15px; font-size: 1.1rem; cursor: pointer; font-family: inherit; font-weight: bold;
+            width: 100%; margin-top: 20px;
+            transition: 0.1s;
+        }
+        button:hover { background: #fff; transform: scale(1.02); }
+
+        .hidden { display: none !important; }
+        
+        .glitch-active { animation: glitch 0.2s linear infinite; }
+        @keyframes glitch {
+            0% { transform: translate(0); filter: contrast(1.1); }
+            25% { transform: translate(-2px, 1px); filter: hue-rotate(5deg); }
+            50% { transform: translate(2px, -1px); }
+            75% { transform: translate(-1px, -1px); }
+            100% { transform: translate(0); }
+        }
+
+        #loading-bar-container { width: 100%; height: 2px; background: #111; margin-top: 10px; position: relative; overflow: hidden; }
+        #loading-bar { width: 0%; height: 100%; background: var(--hacker-green); box-shadow: 0 0 10px var(--hacker-green); transition: width 0.1s; }
+
+        .credits-text { font-size: 10px; opacity: 0.5; margin-top: 20px; text-transform: none; }
+    </style>
+</head>
+<body id="game-body">
+    <div id="crt-overlay"></div>
+
+    <div id="loading-screen" class="overlay-screen">
+        <div class="loading-container">
+            <h1 style="color: var(--hacker-green); font-size: 1.2rem; margin-bottom: 20px;">[ SYSTEM_BOOT_SEQUENCE ]</h1>
+            <div id="load-log" style="height: 180px; font-size: 12px; color: var(--hacker-green); overflow-y: hidden; margin-bottom: 10px;"></div>
+            <div id="loading-bar-container"><div id="loading-bar"></div></div>
+            <div style="margin-top: 10px; font-size: 10px; opacity: 0.5;">SECURE_KERNEL v4.0.2</div>
+        </div>
+    </div>
+
+    <div id="menu" class="overlay-screen hidden">
+        <h1>ROOT_ACCESS</h1>
+        <div class="log-line">> SELECT CORE_VISUAL_PROTOCOL:</div>
+        <div class="customizer">
+            <div class="ball-option selected" data-type="phantom" data-color="#00ff41">PHANTOM<br>[DEFAULT]</div>
+            <div class="ball-option" data-type="void" data-color="#ff003c">VOID<br>[CRIMSON]</div>
+            <div class="ball-option" data-type="overclock" data-color="#ffcc00">OVERCLOCK<br>[GOLD]</div>
+        </div>
+        <div class="terminal-block" style="margin-top: 10px; text-align: left;">
+            <div class="log-line">> MISSION: SYNC 10 DATA NODES.</div>
+            <div class="log-line">> STRATEGY: MAINTAIN SPEED TO OUTRUN SYNC GHOST.</div>
+            <div class="log-line">> GREEN NODES: REPAIR CORE INTEGRITY.</div>
+            <div class="log-line">> GOLD NODES: TEMPORARY OVERCLOCK.</div>
+        </div>
+        <button id="start-btn">EXE.INITIALIZE_BREACH</button>
+        <div class="credits-text">Developed by Gemini</div>
+    </div>
+
+    <div id="death-screen" class="overlay-screen hidden">
+        <h1 style="color: var(--hacker-red); font-size: 3rem;">CORE_CRASHed</h1>
+        <div style="background: rgba(255,0,0,0.1); padding: 15px; border: 1px solid var(--hacker-red); margin-bottom: 20px;">
+            <div class="log-line" style="color: var(--hacker-red); font-weight: bold;">ERROR: <span id="death-reason">CONNECTION_LOST</span></div>
+            <div class="log-line" style="margin-top: 5px;">SYNC_STABILITY: <span style="color: var(--hacker-red);">0.00% [CRITICAL]</span></div>
+            <div class="log-line">NODES_EXTRACTED: <span id="death-score" style="color: var(--hacker-gold);">0</span> UNITS</div>
+        </div>
+        <button id="restart-btn" style="background: var(--hacker-red); color: white;">FORCE_REBOOT</button>
+    </div>
+
+    <div id="victory-screen" class="overlay-screen hidden">
+        <h1>ACCESS_GRANTED</h1>
+        <div class="log-line">> ARCHIVE SYNC COMPLETE.</div>
+        <div class="log-line">> PERFORMANCE_RATING: OPTIMAL</div>
+        <div class="log-line">> NEW BEST TIME: <span id="final-time" style="color: var(--hacker-blue);">--</span></div>
+        <button id="retry-btn">RE-INITIALIZE</button>
+    </div>
+
+    <div id="ui">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div class="terminal-block">
+                <div class="label">>CORE_INTEGRITY</div>
+                <div class="integrity-wrap"><div id="integrity-bar"></div></div>
+                <div id="status-msg">SYNC: OPTIMAL</div>
+                <div class="log-line" id="ghost-delta">DELTA: --</div>
+            </div>
+            <div class="terminal-block" style="min-width: 140px;">
+                <div class="label">>NODES</div>
+                <div style="font-size: 20px; font-weight: bold;">EXTRACT: <span id="score">0</span>/10</div>
+                <div class="log-line" style="color: var(--hacker-red);">T_TIME: <span id="clock">00:00</span></div>
+            </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; align-items: flex-end;">
+            <div id="powerup-status" style="font-weight: bold; font-size: 18px; color: var(--hacker-gold); text-shadow: 0 0 15px var(--hacker-gold);"></div>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, ball, platform;
+        let keys = { w: false, a: false, s: false, d: false };
+        let gems = [];
+        let score = 0, isPlaying = false, startTime = 0;
+        let bestTime = null, integrity = 100, turboTicks = 0;
+        let selectedColor = 0x00ff41;
+        
+        const TARGET_GEMS = 10;
+        const PLATFORM_SIZE = 14;
+        const FRICTION = 0.94;
+        const TILT_SPEED_BASE = 0.0065;
+        const HEALTH_DECAY = 0.15;
+        const ballVelocity = new THREE.Vector3();
+
+        window.onload = async () => {
+            const logEl = document.getElementById('load-log');
+            const bootLogs = [
+                "INIT: SECURE_BOOT_VERIFIED",
+                "LOAD: /DRIVERS/GFX_VULKAN.SYS",
+                "LOAD: /DRIVERS/PHYS_HAWOK.SYS",
+                "NET: ESTABLISHING NEURAL LINK...",
+                "READY: PRESS START"
+            ];
+
+            const typeLog = async (text, delay) => {
+                const line = document.createElement('div');
+                line.className = 'log-line';
+                line.innerHTML = `> <span style="color: #fff">${text}</span>`;
+                logEl.appendChild(line);
+                logEl.scrollTop = logEl.scrollHeight;
+                await new Promise(r => setTimeout(r, delay));
+            };
+
+            for(let i=0; i < bootLogs.length; i++) {
+                await typeLog(bootLogs[i], 150);
+                document.getElementById('loading-bar').style.width = ((i+1)/bootLogs.length)*100 + "%";
+            }
+
+            setTimeout(() => {
+                document.getElementById('loading-screen').classList.add('hidden');
+                document.getElementById('menu').classList.remove('hidden');
+                init();
+            }, 500);
+        };
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000800);
+
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 15, 12);
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            const pLight = new THREE.PointLight(0xffffff, 1.2, 100);
+            pLight.position.set(0, 10, 5);
+            scene.add(pLight);
+            scene.add(new THREE.AmbientLight(0x00ff41, 0.2));
+
+            platform = new THREE.Mesh(
+                new THREE.BoxGeometry(PLATFORM_SIZE, 0.2, PLATFORM_SIZE),
+                new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.1, metalness: 0.5 })
+            );
+            platform.position.y = -0.1;
+            scene.add(platform);
+
+            const grid = new THREE.GridHelper(PLATFORM_SIZE, 14, 0x00ff41, 0x002200);
+            grid.position.y = 0.105;
+            platform.add(grid);
+
+            const ballGeo = new THREE.SphereGeometry(0.5, 32, 32);
+            ball = new THREE.Mesh(ballGeo, new THREE.MeshStandardMaterial({ 
+                color: 0xffffff, emissive: new THREE.Color(selectedColor), emissiveIntensity: 1.5 
+            }));
+            ball.position.y = 0.5;
+            scene.add(ball);
+
+            const pCount = 200;
+            const pGeo = new THREE.BufferGeometry();
+            const pPos = new Float32Array(pCount * 3);
+            for(let i=0; i<pCount*3; i++) pPos[i] = (Math.random()-0.5)*50;
+            pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+            scene.add(new THREE.Points(pGeo, new THREE.PointsMaterial({ color: 0x00ff41, size: 0.08, transparent: true, opacity: 0.3 })));
+
+            window.addEventListener('keydown', e => handleKey(e.key, true));
+            window.addEventListener('keyup', e => handleKey(e.key, false));
+            window.addEventListener('resize', onWindowResize);
+
+            document.querySelectorAll('.ball-option').forEach(opt => {
+                opt.onclick = () => {
+                    document.querySelectorAll('.ball-option').forEach(o => o.classList.remove('selected'));
+                    opt.classList.add('selected');
+                    selectedColor = opt.dataset.color;
+                    ball.material.emissive.set(selectedColor);
+                };
+            });
+
+            document.getElementById('start-btn').onclick = start;
+            document.getElementById('retry-btn').onclick = start;
+            document.getElementById('restart-btn').onclick = start;
+
+            animate();
+        }
+
+        function onWindowResize() {
+            if (!camera || !renderer) return;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function handleKey(k, v) {
+            const key = k.toLowerCase();
+            if (['w', 'arrowup'].includes(key)) keys.w = v;
+            if (['s', 'arrowdown'].includes(key)) keys.s = v;
+            if (['a', 'arrowleft'].includes(key)) keys.a = v;
+            if (['d', 'arrowright'].includes(key)) keys.d = v;
+        }
+
+        function spawnGem(type) {
+            const color = type === 'data' ? 0xff003c : (type === 'heal' ? 0x00ff41 : 0xffcc00);
+            const gem = new THREE.Mesh(
+                new THREE.IcosahedronGeometry(0.4),
+                new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 1.0, flatShading: true })
+            );
+            gem.userData = { type };
+            gem.position.set((Math.random()-0.5)*(PLATFORM_SIZE-3), 0.6, (Math.random()-0.5)*(PLATFORM_SIZE-3));
+            scene.add(gem);
+            gems.push(gem);
+        }
+
+        function start() {
+            score = 0; 
+            integrity = 100; 
+            turboTicks = 0;
+            startTime = Date.now();
+            isPlaying = true;
+            
+            document.getElementById('score').innerText = "0";
+            document.getElementById('clock').innerText = "0.00";
+            document.getElementById('integrity-bar').style.width = "100%";
+            document.getElementById('powerup-status').innerText = "";
+            document.getElementById('status-msg').innerText = "SYNC: OPTIMAL";
+            document.getElementById('status-msg').className = "";
+            document.getElementById('ghost-delta').innerText = "DELTA: --";
+
+            gems.forEach(g => scene.remove(g));
+            gems = [];
+            
+            ball.position.set(0, 0.5, 0);
+            ballVelocity.set(0, 0, 0);
+            platform.rotation.set(0, 0, 0);
+            
+            document.getElementById('menu').classList.add('hidden');
+            document.getElementById('victory-screen').classList.add('hidden');
+            document.getElementById('death-screen').classList.add('hidden');
+            document.getElementById('ui').style.visibility = 'visible';
+            
+            setTimeout(() => {
+                document.getElementById('game-body').classList.remove('glitch-active');
+            }, 100);
+            
+            spawnGem('data');
+            spawnGem('heal');
+        }
+
+        function die(reason) {
+            isPlaying = false;
+            document.getElementById('game-body').classList.add('glitch-active');
+            document.getElementById('death-reason').innerText = reason;
+            document.getElementById('death-score').innerText = score;
+            
+            const ds = document.getElementById('death-screen');
+            ds.classList.remove('hidden');
+            ds.classList.add('crash-impact'); 
+            
+            document.getElementById('ui').style.visibility = 'hidden';
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if(isPlaying) {
+                const now = Date.now();
+                const elapsed = now - startTime;
+                document.getElementById('clock').innerText = (elapsed/1000).toFixed(2);
+
+                if (bestTime) {
+                    const ghostProgress = (bestTime / TARGET_GEMS) * (score + 1);
+                    const diff = elapsed - ghostProgress;
+                    if (diff > 0) {
+                        integrity -= HEALTH_DECAY;
+                        document.getElementById('status-msg').innerText = "SYNC: FAILING";
+                        document.getElementById('status-msg').className = "danger";
+                        document.getElementById('game-body').classList.add('glitch-active');
+                    } else {
+                        document.getElementById('status-msg').innerText = "SYNC: OPTIMAL";
+                        document.getElementById('status-msg').className = "";
+                        document.getElementById('game-body').classList.remove('glitch-active');
+                    }
+                    document.getElementById('ghost-delta').innerText = `DELTA: ${(diff/1000).toFixed(2)}s`;
+                }
+
+                const tiltSpeed = turboTicks > 0 ? TILT_SPEED_BASE * 1.8 : TILT_SPEED_BASE;
+                if (keys.w) platform.rotation.x -= tiltSpeed;
+                if (keys.s) platform.rotation.x += tiltSpeed;
+                if (keys.a) platform.rotation.z += tiltSpeed;
+                if (keys.d) platform.rotation.z -= tiltSpeed;
+
+                platform.rotation.x *= 0.94;
+                platform.rotation.z *= 0.94;
+
+                ballVelocity.z += platform.rotation.x * 0.05;
+                ballVelocity.x -= platform.rotation.z * 0.05;
+                ballVelocity.multiplyScalar(FRICTION);
+                ball.position.add(ballVelocity);
+
+                for(let i = gems.length - 1; i >= 0; i--) {
+                    gems[i].rotation.y += 0.05;
+                    gems[i].position.y = 0.6 + Math.sin(now * 0.005) * 0.1;
+
+                    if(ball.position.distanceTo(gems[i].position) < 0.85) {
+                        const type = gems[i].userData.type;
+                        scene.remove(gems[i]);
+                        gems.splice(i, 1);
+                        
+                        if(type === 'data') {
+                            score++;
+                            document.getElementById('score').innerText = score;
+                            if(score >= TARGET_GEMS) {
+                                isPlaying = false;
+                                document.getElementById('game-body').classList.remove('glitch-active');
+                                if(!bestTime || elapsed < bestTime) bestTime = elapsed;
+                                document.getElementById('final-time').innerText = (elapsed/1000).toFixed(2) + "s";
+                                document.getElementById('victory-screen').classList.remove('hidden');
+                            } else {
+                                spawnGem('data');
+                                if(Math.random() > 0.6) spawnGem('heal');
+                                if(Math.random() > 0.85) spawnGem('turbo');
+                            }
+                        } else if(type === 'heal') {
+                            integrity = Math.min(100, integrity + 30);
+                        } else if(type === 'turbo') {
+                            turboTicks = 250;
+                        }
+                    }
+                }
+
+                if(turboTicks > 0) {
+                    turboTicks--;
+                    document.getElementById('powerup-status').innerText = ">> OVERCLOCK_ACTIVE";
+                    ball.material.emissiveIntensity = 4.0;
+                } else {
+                    document.getElementById('powerup-status').innerText = "";
+                    ball.material.emissiveIntensity = 1.5;
+                }
+
+                const outX = Math.abs(ball.position.x) > PLATFORM_SIZE/2;
+                const outZ = Math.abs(ball.position.z) > PLATFORM_SIZE/2;
+                
+                if(outX || outZ) {
+                    ball.position.y -= 0.15;
+                    if(ball.position.y < -5) die("BOUNDARY_VIOLATION");
+                } else {
+                    ball.position.y = 0.5;
+                }
+
+                document.getElementById('integrity-bar').style.width = integrity + "%";
+                if(integrity <= 0) die("INTEGRITY_DEPLETION");
+
+                camera.position.lerp(new THREE.Vector3(ball.position.x * 0.4, 15, 12 + ball.position.z * 0.4), 0.1);
+                camera.lookAt(ball.position.x, 0, ball.position.z);
+            }
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
